@@ -10,13 +10,29 @@ using UnityEngine.Jobs;
 public class NewJobTesting : MonoBehaviour
 {
 
-    [SerializeField] private bool useJobs;
-    //private Color[] pix1, pix2, pix3, pix4; 
+    [SerializeField] 
+    private bool useJobs;
+
+    [SerializeField] 
+    public Texture2D texture;
+
     Texture2D pixTex1, pixTex2, pixTex3, pixTex4;
     // Update is called once per frame
+    //private Texture2D texture;
 
 
-    public void Update()
+    NativeList<Vector4> extractColors(Texture2D texture, int x, int y)
+    {
+        Color[] pix1 = texture.GetPixels(x, y, texture.width / 2, texture.height / 2);
+        NativeList<Vector4> colorsV4 = new NativeList<Vector4>(Allocator.TempJob);
+        foreach (var color in pix1)
+        {
+            colorsV4.Add(color);
+        }
+        return colorsV4;
+    }
+
+    void Update()
     {
         
         float startTime = Time.realtimeSinceStartup;
@@ -24,22 +40,38 @@ public class NewJobTesting : MonoBehaviour
         if (useJobs)
         { 
             NativeList<JobHandle> jobHandleList = new NativeList<JobHandle>(Allocator.Temp);
-            for (int i =0; i<10; i++)
+
+            //
+            var texture = Resources.Load<Texture2D>("Grass");
+
+            //
+            int[] xvals = {0, texture.width / 2};
+            int[] yvals = {0, texture.height / 2};
+            List<NativeList<Vector4>> allVectors = new List<NativeList<Vector4>>();
+            foreach (int x in xvals)
             {
-                JobHandle jobHandle = ReallyToughTaskJob();
-                jobHandleList.Add(jobHandle);
+                foreach (int y in yvals) {
+                    var colorsV4 = extractColors(texture, x, y);
+                    allVectors.Add(colorsV4);
+                    int[] limits = { x, y };
+                    JobHandle jobHandle = ReallyToughTaskJob(colorsV4, allVectors.Count, limits);
+                    jobHandleList.Add(jobHandle);
+
+                }
             }
             
             JobHandle.CompleteAll(jobHandleList);
+            
             jobHandleList.Dispose();
+            foreach(var colorsV4 in allVectors) {
+                colorsV4.Dispose();
+            }
+            
         }
         //Whitout theads, this code takes more time, this is only traditional task
         else
         {
-            for (int i =0; i<10; i++)
-            {
-                Start();
-            }
+            Start();            
         }
         
 
@@ -48,63 +80,42 @@ public class NewJobTesting : MonoBehaviour
 
     //For Task
     //The textures are loaded in variables an divided into parts, then the loops create the result
-    private void Start()
+    void Start()
     {   //Complex execution tasks
-        Color color = new Color();
+        //Color color = new Color();
         float sum_red = 0f;
 
         /*-----------------------------*/
-        var texture = Resources.Load<Texture2D>("Grass");
-       
-        Color[] pix1 = texture.GetPixels(0, 0, texture.width/2, texture.height/2);
-        pixTex1 = new Texture2D(texture.width/2, texture.height/2);
-        pixTex1.SetPixels(pix1);
-       
-        Color[] pix2 = texture.GetPixels(0, texture.height/2, texture.width/2, texture.height/2);
-        pixTex2 = new Texture2D(texture.width/2, texture.height/2);
-        pixTex2.SetPixels(pix2);
+        Texture2D texture = Resources.Load<Texture2D>("Grass");
 
-        Color[] pix3 = texture.GetPixels(texture.width/2, 0, texture.width/2, texture.height/2);
-        pixTex3 = new Texture2D(texture.width/2, texture.height/2);
-        pixTex3.SetPixels(pix3);
+        int[] xvals = { 0, texture.width / 2 };
+        int[] yvals = { 0, texture.height / 2 };
+        List<NativeList<Vector4>> allVectors = new List<NativeList<Vector4>>();
+        foreach (int x in xvals)
+        {
+            foreach (int y in yvals)
+            {
+                var colorsV4 = extractColors(texture, x, y);
+                allVectors.Add(colorsV4);
+                foreach (var color in colorsV4)
+                {
+                    sum_red += color[0];
+                }
+                Debug.Log(("R Channel Sum START ") + sum_red + "x: " + x +  "y: "+ y);
+            }
+        }
 
-        Color[] pix4 = texture.GetPixels(texture.width/2, texture.height/2, texture.width/2, texture.height/2);
-        pixTex4 = new Texture2D(texture.width/2, texture.height/2);
-        pixTex4.SetPixels(pix4);
-       
-        /*-----------------------------*/
-
+        foreach (var colorsV4 in allVectors)
+        {
+            colorsV4.Dispose();
+        }
         
-        for (int i = 0; i< pixTex1.height; i++){
-            for (int j = 0; j< pixTex1.height; j++){
-                color = pixTex1.GetPixel(i,j);
-                sum_red += color.r;
-            }
-        }
-        for (int i = 0; i< pixTex2.height; i++){
-            for (int j = 0; j< pixTex2.height; j++){
-                color = pixTex2.GetPixel(i,j);
-                sum_red += color.r;
-            }
-        }
-        for (int i = 0; i< pixTex3.height; i++){
-            for (int j = 0; j< pixTex3.height; j++){
-                color = pixTex3.GetPixel(i,j);
-                sum_red += color.r;
-            }
-        }
-        for (int i = 0; i< pixTex4.height; i++){
-            for (int j = 0; j< pixTex4.height; j++){
-                color = pixTex4.GetPixel(i,j);
-                sum_red += color.r;
-            }
-        }
-         Debug.Log(("R Channel Sum From Task: ") + sum_red );
     }
 
-    public JobHandle ReallyToughTaskJob()
+    public JobHandle ReallyToughTaskJob(NativeList<Vector4> pix, int jobIndex, int[] limits)
     {
-        ReallyToughJob job = new ReallyToughJob();
+        
+        ReallyToughJob job = new ReallyToughJob( pix , jobIndex, limits[0], limits[1]);
         return job.Schedule();
     }
                  
@@ -114,55 +125,35 @@ public class NewJobTesting : MonoBehaviour
     public struct ReallyToughJob : IJob
     {
 
-        
-        public void Execute()
-        {
-            Color color;
-            float sum_red = 0f;
-            var texture = Resources.Load<Texture2D>("Grass");
-           
-            Color[] pix1 = texture.GetPixels(0, 0, texture.width/2, texture.height/2);
-            Texture2D pixTex1 = new Texture2D(texture.width/2, texture.height/2);
-            pixTex1.SetPixels(pix1);
- 
-            Color[] pix2 = texture.GetPixels(0, 0, texture.width/2, texture.height/2);
-            Texture2D pixTex2 = new Texture2D(texture.width/2, texture.height/2);
-            pixTex2.SetPixels(pix2);
 
-            Color[] pix3 = texture.GetPixels(0, 0, texture.width/2, texture.height/2);
-            Texture2D pixTex3 = new Texture2D(texture.width/2, texture.height/2);
-            pixTex3.SetPixels(pix3);
+        NativeList<Vector4> pix ;
+        int jobIndex;
+        int x;
+        int y;
+        float sum_red;
 
-            Color[] pix4 = texture.GetPixels(0, 0, texture.width/2, texture.height/2);
-            Texture2D pixTex4 = new Texture2D(texture.width/2, texture.height/2);
-            pixTex4.SetPixels(pix4);
-            
-            //Color color = load4Textures.pixTex1.GetPixel(i,j);
-                for (int i = 0; i< pixTex1.height; i++){
-                    for (int j = 0; j< pixTex1.height; j++){
-                        color = pixTex1.GetPixel(i,j);
-                        sum_red += color.r;
-                    }
-                }
-                for (int i = 0; i< pixTex2.height; i++){
-                    for (int j = 0; j< pixTex2.height; j++){
-                        color = pixTex2.GetPixel(i,j);
-                        sum_red += color.r;
-                    }
-                }
-                for (int i = 0; i< pixTex3.height; i++){
-                    for (int j = 0; j< pixTex3.height; j++){
-                        color = pixTex3.GetPixel(i,j);
-                        sum_red += color.r;
-                    }
-                }
-                for (int i = 0; i< pixTex4.height; i++){
-                    for (int j = 0; j< pixTex4.height; j++){
-                        color = pixTex4.GetPixel(i,j);
-                        sum_red += color.r;
-                    }
-                }
-             Debug.Log(("R Channel Sum From IJOB-Execute: ") + sum_red );
+        public ReallyToughJob(NativeList<Vector4> _pix, int _jobIndex, int _x, int _y){
+            pix = _pix;
+            jobIndex = _jobIndex;
+            sum_red = 0;
+            x = _x;
+            y = _y;
         }
+
+
+        override
+        public string ToString(){
+            return jobIndex+" [ "+ x+" " +y+"] => " + sum_red;
+        }
+
+        public void Execute(){
+            
+            foreach (var px in pix)
+            {
+                sum_red += px[0];
+                
+            }
+            Debug.Log(this);
         
+        }   
     }

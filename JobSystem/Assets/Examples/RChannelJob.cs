@@ -38,7 +38,7 @@ public class RChannelJob : MonoBehaviour
           for ( i = 0; i < RChannelTexture.Length; i++)
                 sum = SumRChannel[i] + RChannelTexture[i][0];
             
-            Debug.Log("ejemplo");
+            Debug.Log("ejemplo"+sum);
             
             
         }
